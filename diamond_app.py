@@ -7,12 +7,46 @@ import io
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.svm import SVR
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
+from scipy import stats
+
+# Define luxury color palette
+colors = {
+    'primary': {
+        'merlot': '#730000',
+        'plum': '#701C1C',
+        'bordeaux': '#50222D',
+        'charcoal': '#36454F'
+    },
+    'accent': {
+        'gold': '#C5A880',
+        'ivory': '#F0EAD6',
+        'silver': '#C4C3D0',
+        'cream': '#F5DEB3'
+    },
+    'graph': {
+        'primary': ['#730000', '#701C1C', '#50222D', '#36454F'],
+        'secondary': ['#C5A880', '#F0EAD6', '#C4C3D0', '#F5DEB3'],
+        'highlight': '#C5A880'
+    }
+}
+
+# Set Matplotlib style for all plots
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.rcParams['axes.facecolor'] = '#FFFFFF'
+plt.rcParams['figure.facecolor'] = '#FFFFFF'
+plt.rcParams['axes.edgecolor'] = colors['primary']['charcoal']
+plt.rcParams['axes.labelcolor'] = colors['primary']['charcoal']
+plt.rcParams['xtick.color'] = colors['primary']['charcoal']
+plt.rcParams['ytick.color'] = colors['primary']['charcoal']
+plt.rcParams['grid.color'] = '#EEEEEE'
+plt.rcParams['grid.linestyle'] = '--'
+plt.rcParams['grid.alpha'] = 0.7
 
 # Set page configuration
 st.set_page_config(
@@ -22,34 +56,79 @@ st.set_page_config(
 )
 
 # Custom styling
-st.markdown("""
+st.markdown(f"""
 <style>
-    .main-header {
+    .main-header {{
         font-size: 2.5rem;
-        color: #3366ff;
+        color: {colors['primary']['bordeaux']};
         text-align: center;
-    }
-    .sub-header {
+        font-weight: 600;
+    }}
+    .sub-header {{
         font-size: 1.5rem;
-        color: #6633ff;
-    }
-    .metric-container {
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        padding: 10px;
-        margin: 10px 0;
-    }
-    .algorithm-card {
-        background-color: #f8f9fa;
+        color: {colors['primary']['plum']};
+        font-weight: 500;
+    }}
+    .metric-container {{
+        background-color: {colors['accent']['ivory']};
         border-radius: 10px;
         padding: 15px;
         margin: 10px 0;
-        border-left: 4px solid #3366ff;
-    }
-    .selected-algorithm {
-        border-left: 4px solid #22c55e;
-        background-color: #f0f9ff;
-    }
+        border-left: 4px solid {colors['primary']['bordeaux']};
+    }}
+    .algorithm-card {{
+        background-color: {colors['accent']['ivory']};
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        border-left: 4px solid {colors['primary']['merlot']};
+    }}
+    .selected-algorithm {{
+        border-left: 4px solid {colors['accent']['gold']};
+        background-color: {colors['accent']['ivory']};
+    }}
+    .accuracy-card {{
+        background-color: {colors['accent']['ivory']};
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        border-left: 4px solid {colors['accent']['gold']};
+    }}
+    .stApp {{
+        background-color: #FFFFFF;
+    }}
+    div[data-testid="stMetric"] {{
+        background-color: #FFFFFF;
+        padding: 10px;
+        border-radius: 5px;
+    }}
+    div[data-testid="stMetric"] > div:first-child {{
+        color: {colors['primary']['bordeaux']};
+    }}
+    div[data-testid="stMetric"] > div:nth-child(2) {{
+        color: {colors['primary']['charcoal']};
+    }}
+    .stDataFrame {{
+        border: 1px solid {colors['accent']['silver']};
+        border-radius: 5px;
+    }}
+    .stButton > button {{
+        background-color: {colors['primary']['bordeaux']};
+        color: white;
+        border: none;
+    }}
+    .stButton > button:hover {{
+        background-color: {colors['primary']['merlot']};
+    }}
+    .stSelectbox > div > div {{
+        background-color: {colors['accent']['ivory']};
+    }}
+    .stSlider > div > div > div {{
+        background-color: {colors['primary']['bordeaux']};
+    }}
+    .stProgress > div > div > div {{
+        background-color: {colors['primary']['bordeaux']};
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,9 +138,11 @@ st.markdown("<h1 class='main-header'>💎 Diamond Price Analysis & Prediction</h
 # Sidebar
 st.sidebar.image("https://img.icons8.com/color/96/000000/diamond.png", width=100)
 st.sidebar.title("Navigation")
+st.sidebar.markdown(f"<div style='background-color: {colors['accent']['ivory']}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
 page = st.sidebar.radio("Go to", ["Data Overview", "Exploratory Analysis", "Price vs Attributes", 
                                   "Distribution Analysis", "Model Building", "Model Evaluation", 
                                   "Feature Correlation", "Error Analysis", "Price Prediction"])
+st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
 # Initialize session state if not already done
 if 'models' not in st.session_state:
@@ -122,8 +203,12 @@ elif page == "Exploratory Analysis":
     feature = st.selectbox("Select Feature", ["cut", "color", "clarity"])
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.boxplot(x=df[feature], y=df['price'], ax=ax)
-    plt.title(f'Boxplot between "{feature.upper()}" and "PRICE"')
+    sns.boxplot(x=df[feature], y=df['price'], ax=ax, palette=[colors['primary']['bordeaux'], colors['primary']['plum'], 
+                                                             colors['primary']['merlot'], colors['primary']['charcoal']])
+    plt.title(f'Boxplot between "{feature.upper()}" and "PRICE"', fontsize=14, color=colors['primary']['bordeaux'])
+    ax.set_xlabel(feature.capitalize(), fontsize=12, color=colors['primary']['charcoal'])
+    ax.set_ylabel('Price ($)', fontsize=12, color=colors['primary']['charcoal'])
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
     st.pyplot(fig)
     
     st.write(f"### Insights for {feature.upper()} vs Price")
@@ -141,20 +226,28 @@ elif page == "Price vs Attributes":
     attributes = ["carat", "depth", "table", "x", "y", "z"]
     attribute = st.selectbox("Select Attribute", attributes)
     
-    colors = {
-        "carat": "#3875E3", "depth": "#A038E3", "table": "#38E37A",
-        "x": "#C13481", "y": "#C13443", "z": "#C18534"
+    attribute_colors = {
+        "carat": colors['primary']['merlot'],
+        "depth": colors['primary']['plum'],
+        "table": colors['primary']['bordeaux'],
+        "x": colors['primary']['charcoal'],
+        "y": colors['accent']['gold'],
+        "z": colors['primary']['bordeaux']
     }
-    markers = {"carat": "*", "depth": "+", "table": "+", "x": "*", "y": "*", "z": "*"}
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    plt.scatter(df[attribute], df['price'], color=colors[attribute], marker=markers[attribute])
-    plt.title(f'Scatter plot between "{attribute.upper()}" and "PRICE"')
+    plt.scatter(df[attribute], df['price'], color=attribute_colors[attribute], alpha=0.6)
+    plt.title(f'Relationship between {attribute.upper()} and PRICE', fontsize=14, color=colors['primary']['bordeaux'])
+    ax.set_xlabel(attribute.capitalize(), fontsize=12, color=colors['primary']['charcoal'])
+    ax.set_ylabel('Price ($)', fontsize=12, color=colors['primary']['charcoal'])
+    plt.grid(True, linestyle='--', alpha=0.7)
     st.pyplot(fig)
     
     # Add correlation coefficient
     corr = df[attribute].corr(df['price'])
+    st.markdown(f"<div style='background-color: {colors['accent']['ivory']}; padding: 15px; border-radius: 10px; border-left: 4px solid {colors['primary']['bordeaux']}'>", unsafe_allow_html=True)
     st.write(f"### Correlation with Price: {corr:.4f}")
+    st.markdown("</div>", unsafe_allow_html=True)
     
     if attribute == "carat":
         st.write("Carat weight has the strongest positive correlation with price. As carat weight increases, price increases exponentially.")
@@ -169,10 +262,13 @@ elif page == "Distribution Analysis":
     
     if plot_type == "Distribution Plot":
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.distplot(df['price'], bins='sturges', hist=False, color='#34C1B7', ax=ax)
-        plt.axvline(df['price'].mean(), label=f'Mean price = {df["price"].mean():.3f}', color='#000000')
-        plt.title('Normal Distribution Curve for the "price"')
+        sns.kdeplot(df['price'], color=colors['primary']['bordeaux'], fill=True, alpha=0.3, ax=ax)
+        plt.axvline(df['price'].mean(), label=f'Mean price = {df["price"].mean():.3f}', color=colors['primary']['charcoal'], linestyle='--')
+        plt.title('Price Distribution', fontsize=14, color=colors['primary']['bordeaux'])
+        ax.set_xlabel('Price ($)', fontsize=12, color=colors['primary']['charcoal'])
+        ax.set_ylabel('Density', fontsize=12, color=colors['primary']['charcoal'])
         plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
         st.pyplot(fig)
     else:
         # Create a probability density function for plotting the normal distribution
@@ -184,10 +280,13 @@ elif page == "Distribution Analysis":
         # Plot the normal distribution curve using plt.scatter()
         rho = prob(df["price"].sort_values(), df["price"].mean(), df["price"].std())
         fig, ax = plt.subplots(figsize=(10, 6))
-        plt.scatter(df["price"].sort_values(), rho)
-        plt.axvline(x=df["price"].mean(), label="mean of price", color='#000000')
-        plt.title('Normal Distribution curve using "plt.scatter()"')
+        plt.scatter(df["price"].sort_values(), rho, color=colors['primary']['bordeaux'], alpha=0.6, s=10)
+        plt.axvline(x=df["price"].mean(), label="Mean price", color=colors['primary']['charcoal'], linestyle='--')
+        plt.title('Normal Distribution Curve', fontsize=14, color=colors['primary']['bordeaux'])
+        ax.set_xlabel('Price ($)', fontsize=12, color=colors['primary']['charcoal'])
+        ax.set_ylabel('Probability Density', fontsize=12, color=colors['primary']['charcoal'])
         plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
         st.pyplot(fig)
     
     st.write("### Price Distribution Statistics")
@@ -226,6 +325,7 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
         st.dataframe(df_encoded.head())
     
     # Data preprocessing options
+    st.markdown(f"<div style='background-color: {colors['accent']['ivory']}; padding: 15px; border-radius: 10px;'>", unsafe_allow_html=True)
     st.write("### Data Preprocessing Options")
     
     col1, col2 = st.columns(2)
@@ -248,6 +348,8 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
         use_cross_validation = st.checkbox("Use Cross-Validation", value=True)
         if use_cross_validation:
             cv_folds = st.slider("Number of CV Folds", 3, 10, 5)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
     
     # Split data
     X = df_encoded[features]
@@ -280,6 +382,7 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
     st.write(f"### Training set: {X_train.shape[0]} samples | Test set: {X_test.shape[0]} samples")
     
     # Algorithm selection
+    st.markdown(f"<div style='background-color: {colors['accent']['ivory']}; padding: 15px; border-radius: 10px;'>", unsafe_allow_html=True)
     st.write("### Select Algorithms to Train")
     
     # Define available algorithms with their parameters
@@ -287,18 +390,6 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
         "Linear Regression": {
             "model": LinearRegression(),
             "params": {}
-        },
-        "Ridge Regression": {
-            "model": Ridge(),
-            "params": {
-                "alpha": st.slider("Ridge alpha", 0.01, 10.0, 1.0, 0.01, key="ridge_alpha")
-            }
-        },
-        "Lasso Regression": {
-            "model": Lasso(),
-            "params": {
-                "alpha": st.slider("Lasso alpha", 0.001, 1.0, 0.01, 0.001, key="lasso_alpha")
-            }
         },
         "Decision Tree": {
             "model": DecisionTreeRegressor(),
@@ -342,20 +433,18 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
     with col1:
         if st.checkbox("Linear Regression", value=True):
             selected_algorithms.append("Linear Regression")
-        if st.checkbox("Ridge Regression"):
-            selected_algorithms.append("Ridge Regression")
-        if st.checkbox("Lasso Regression"):
-            selected_algorithms.append("Lasso Regression")
         if st.checkbox("Decision Tree"):
             selected_algorithms.append("Decision Tree")
-    
-    with col2:
         if st.checkbox("Random Forest"):
             selected_algorithms.append("Random Forest")
+    
+    with col2:
         if st.checkbox("Gradient Boosting"):
             selected_algorithms.append("Gradient Boosting")
         if st.checkbox("Support Vector Machine"):
             selected_algorithms.append("Support Vector Machine")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
     
     # Train models
     if st.button("Train Selected Models"):
@@ -452,11 +541,11 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
         x = np.arange(len(model_names))
         width = 0.35
         
-        ax.bar(x - width/2, train_scores, width, label='Train R²', color='#4CAF50')
-        ax.bar(x + width/2, test_scores, width, label='Test R²', color='#2196F3')
+        ax.bar(x - width/2, train_scores, width, label='Train R²', color=colors['primary']['bordeaux'], alpha=0.8)
+        ax.bar(x + width/2, test_scores, width, label='Test R²', color=colors['accent']['gold'], alpha=0.8)
         
-        ax.set_ylabel('R² Score')
-        ax.set_title('Model Performance Comparison')
+        ax.set_ylabel('R² Score', fontsize=12, color=colors['primary']['charcoal'])
+        ax.set_title('Model Performance Comparison', fontsize=14, color=colors['primary']['bordeaux'])
         ax.set_xticks(x)
         ax.set_xticklabels(model_names, rotation=45, ha='right')
         ax.legend()
@@ -484,9 +573,14 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
                 
                 # Plot feature importance
                 fig, ax = plt.subplots(figsize=(10, 6))
-                plt.bar(range(X_train.shape[1]), importances[indices], align='center')
+                plt.bar(range(X_train.shape[1]), importances[indices], align='center', 
+                       color=[colors['primary']['bordeaux'], colors['primary']['plum'], colors['accent']['gold'], 
+                             colors['primary']['charcoal']])
                 plt.xticks(range(X_train.shape[1]), [X_train.columns[i] for i in indices], rotation=90)
-                plt.title(f'Feature Importance - {selected_model}')
+                plt.title(f'Feature Importance - {selected_model}', fontsize=14, color=colors['primary']['bordeaux'])
+                ax.set_xlabel('Features', fontsize=12, color=colors['primary']['charcoal'])
+                ax.set_ylabel('Importance', fontsize=12, color=colors['primary']['charcoal'])
+                plt.grid(axis='y', linestyle='--', alpha=0.7)
                 plt.tight_layout()
                 st.pyplot(fig)
 
@@ -558,11 +652,11 @@ elif page == "Model Evaluation":
             
             # Plot CV scores
             fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(range(1, len(cv_scores) + 1), cv_scores, 'o-', label='R² score')
-            ax.axhline(y=cv_scores.mean(), color='r', linestyle='--', label=f'Mean: {cv_scores.mean():.3f}')
-            ax.set_xlabel('Fold')
-            ax.set_ylabel('R² Score')
-            ax.set_title('Cross-Validation Scores')
+            ax.plot(range(1, len(cv_scores) + 1), cv_scores, 'o-', color=colors['primary']['bordeaux'], label='R² score')
+            ax.axhline(y=cv_scores.mean(), color=colors['primary']['charcoal'], linestyle='--', label=f'Mean: {cv_scores.mean():.3f}')
+            ax.set_xlabel('Fold', fontsize=12, color=colors['primary']['charcoal'])
+            ax.set_ylabel('R² Score', fontsize=12, color=colors['primary']['charcoal'])
+            ax.set_title('Cross-Validation Scores', fontsize=14, color=colors['primary']['bordeaux'])
             ax.legend()
             ax.grid(True, linestyle='--', alpha=0.7)
             st.pyplot(fig)
@@ -580,11 +674,12 @@ elif page == "Model Evaluation":
             predicted = y_test_pred
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        plt.scatter(actual, predicted, alpha=0.5)
-        plt.plot([actual.min(), actual.max()], [actual.min(), actual.max()], 'r--')
-        plt.xlabel('Actual Price')
-        plt.ylabel('Predicted Price')
-        plt.title(f'Actual vs Predicted Prices ({dataset})')
+        plt.scatter(actual, predicted, alpha=0.6, color=colors['primary']['bordeaux'], s=30)
+        plt.plot([actual.min(), actual.max()], [actual.min(), actual.max()], '--', color=colors['primary']['charcoal'])
+        plt.xlabel('Actual Price', fontsize=12, color=colors['primary']['charcoal'])
+        plt.ylabel('Predicted Price', fontsize=12, color=colors['primary']['charcoal'])
+        plt.title(f'Actual vs Predicted Prices ({dataset})', fontsize=14, color=colors['primary']['bordeaux'])
+        plt.grid(True, linestyle='--', alpha=0.7)
         st.pyplot(fig)
         
         # Residual plot
@@ -595,19 +690,19 @@ elif page == "Model Evaluation":
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
         
         # Residual scatter plot
-        ax1.scatter(predicted, residuals, alpha=0.5)
-        ax1.axhline(y=0, color='r', linestyle='--')
-        ax1.set_xlabel('Predicted Price')
-        ax1.set_ylabel('Residuals')
-        ax1.set_title('Residuals vs Predicted')
+        ax1.scatter(predicted, residuals, alpha=0.6, color=colors['primary']['bordeaux'], s=30)
+        ax1.axhline(y=0, color=colors['primary']['charcoal'], linestyle='--')
+        ax1.set_xlabel('Predicted Price', fontsize=12, color=colors['primary']['charcoal'])
+        ax1.set_ylabel('Residuals', fontsize=12, color=colors['primary']['charcoal'])
+        ax1.set_title('Residuals vs Predicted', fontsize=14, color=colors['primary']['bordeaux'])
         ax1.grid(True, linestyle='--', alpha=0.7)
         
         # Residual histogram
-        ax2.hist(residuals, bins=30, alpha=0.7, color='skyblue')
-        ax2.axvline(x=0, color='r', linestyle='--')
-        ax2.set_xlabel('Residual Value')
-        ax2.set_ylabel('Frequency')
-        ax2.set_title('Residual Distribution')
+        ax2.hist(residuals, bins=30, alpha=0.7, color=colors['accent']['gold'])
+        ax2.axvline(x=0, color=colors['primary']['charcoal'], linestyle='--')
+        ax2.set_xlabel('Residual Value', fontsize=12, color=colors['primary']['charcoal'])
+        ax2.set_ylabel('Frequency', fontsize=12, color=colors['primary']['charcoal'])
+        ax2.set_title('Residual Distribution', fontsize=14, color=colors['primary']['bordeaux'])
         ax2.grid(True, linestyle='--', alpha=0.7)
         
         plt.tight_layout()
@@ -629,8 +724,9 @@ elif page == "Feature Correlation":
     st.write("### Correlation Heatmap")
     
     fig, ax = plt.subplots(figsize=(12, 10))
-    sns.heatmap(df_encoded.corr(), annot=True, cmap='coolwarm', ax=ax)
-    plt.title('Feature Correlation Heatmap')
+    cmap = sns.diverging_palette(220, 20, as_cmap=True)
+    sns.heatmap(df_encoded.corr(), annot=True, cmap=cmap, center=0, ax=ax)
+    plt.title('Feature Correlation Heatmap', fontsize=14, color=colors['primary']['bordeaux'])
     st.pyplot(fig)
     
     # VIF calculation
@@ -651,6 +747,7 @@ elif page == "Feature Correlation":
         
         st.dataframe(VIF)
         
+        st.markdown(f"<div style='background-color: {colors['accent']['ivory']}; padding: 15px; border-radius: 10px; border-left: 4px solid {colors['primary']['bordeaux']}'>", unsafe_allow_html=True)
         st.write("""
         ### VIF Interpretation
         - VIF > 10: High multicollinearity
@@ -659,6 +756,7 @@ elif page == "Feature Correlation":
         
         Features with high VIF values may be redundant and could potentially be removed to simplify the model.
         """)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # Error Analysis
 elif page == "Error Analysis":
@@ -716,20 +814,24 @@ elif page == "Error Analysis":
         st.write(f"### Error Distribution ({dataset})")
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        plt.hist(errors, bins='sturges', color='#3175D9')
-        plt.axvline(errors.mean(), color='#D93131', label=f'Mean Error: {errors.mean():.2f}')
-        plt.title(f'Histogram for the errors obtained in the predicted values of the {dataset.lower()}')
+        plt.hist(errors, bins='sturges', color=colors['primary']['bordeaux'], alpha=0.7)
+        plt.axvline(errors.mean(), color=colors['primary']['charcoal'], linestyle='--', label=f'Mean Error: {errors.mean():.2f}')
+        plt.title(f'Error Distribution in {dataset}', fontsize=14, color=colors['primary']['bordeaux'])
+        plt.xlabel('Error Value', fontsize=12, color=colors['primary']['charcoal'])
+        plt.ylabel('Frequency', fontsize=12, color=colors['primary']['charcoal'])
         plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
         st.pyplot(fig)
         
         st.write(f"### Error vs Actual Price ({dataset})")
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        plt.scatter(errors, y_actual, color='#D93131', marker='*', alpha=0.5)
-        plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
-        plt.title(f'Scatter plot between the errors and the dependent variable for the {dataset.lower()}')
-        plt.xlabel('Errors')
-        plt.ylabel('Actual Price')
+        plt.scatter(errors, y_actual, color=colors['primary']['bordeaux'], alpha=0.6, s=30)
+        plt.axhline(y=0, color=colors['primary']['charcoal'], linestyle='-', alpha=0.3)
+        plt.title(f'Errors vs Actual Price ({dataset})', fontsize=14, color=colors['primary']['bordeaux'])
+        plt.xlabel('Errors', fontsize=12, color=colors['primary']['charcoal'])
+        plt.ylabel('Actual Price', fontsize=12, color=colors['primary']['charcoal'])
+        plt.grid(True, linestyle='--', alpha=0.7)
         st.pyplot(fig)
         
         # Error statistics
@@ -771,10 +873,10 @@ elif page == "Error Analysis":
         
         # Plot MAE by price bin
         fig, ax = plt.subplots(figsize=(10, 6))
-        bin_stats['MAE'].plot(kind='bar', ax=ax, color='#3175D9')
-        plt.title('Mean Absolute Error by Price Range')
-        plt.ylabel('Mean Absolute Error ($)')
-        plt.xlabel('Price Range')
+        bin_stats['MAE'].plot(kind='bar', ax=ax, color=colors['primary']['bordeaux'])
+        plt.title('Mean Absolute Error by Price Range', fontsize=14, color=colors['primary']['bordeaux'])
+        plt.ylabel('Mean Absolute Error ($)', fontsize=12, color=colors['primary']['charcoal'])
+        plt.xlabel('Price Range', fontsize=12, color=colors['primary']['charcoal'])
         plt.xticks(rotation=45)
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         st.pyplot(fig)
@@ -799,8 +901,10 @@ elif page == "Price Prediction":
         model = model_info["model"]
         features = st.session_state.features
         
+        st.markdown(f"<div style='background-color: {colors['accent']['ivory']}; padding: 15px; border-radius: 10px; border-left: 4px solid {colors['primary']['bordeaux']}'>", unsafe_allow_html=True)
         st.write(f"### Using {selected_model} for Prediction")
         st.write(f"Test R² Score: {model_info['test_r2']:.4f} | Test RMSE: ${model_info['test_rmse']:.2f}")
+        st.markdown("</div>", unsafe_allow_html=True)
         
         st.write("### Enter Diamond Characteristics")
         
@@ -867,16 +971,101 @@ elif page == "Price Prediction":
             # Make prediction with selected model
             predicted_price = model.predict(input_scaled)[0]
             
+            # Find similar diamonds for accuracy estimation
+            similar_diamonds = None
+            accuracy_estimate = None
+            
+            if "carat" in df.columns:
+                # Find diamonds with similar characteristics
+                similar_diamonds = df.copy()
+                
+                # Filter by carat (within 10%)
+                similar_diamonds = similar_diamonds[(similar_diamonds['carat'] >= carat*0.9) & 
+                                                   (similar_diamonds['carat'] <= carat*1.1)]
+                
+                # Filter by cut if possible
+                if "cut" in similar_diamonds.columns and cut in ["Fair", "Good", "Very Good", "Premium", "Ideal"]:
+                    similar_diamonds = similar_diamonds[similar_diamonds['cut'] == cut]
+                
+                # Filter by color if possible
+                if "color" in similar_diamonds.columns and color in ["D", "E", "F", "G", "H", "I", "J"]:
+                    similar_diamonds = similar_diamonds[similar_diamonds['color'] == color]
+                
+                # Filter by clarity if possible
+                if "clarity" in similar_diamonds.columns:
+                    similar_diamonds = similar_diamonds[similar_diamonds['clarity'] == clarity]
+                
+                # Calculate accuracy metrics if we have similar diamonds
+                if not similar_diamonds.empty and len(similar_diamonds) >= 5:
+                    # Calculate mean and std of prices for similar diamonds
+                    mean_price = similar_diamonds['price'].mean()
+                    std_price = similar_diamonds['price'].std()
+                    
+                    # Calculate prediction error percentage
+                    error_percent = abs(predicted_price - mean_price) / mean_price * 100
+                    
+                    # Estimate accuracy based on how close our prediction is to the mean of similar diamonds
+                    if error_percent <= 5:
+                        accuracy_estimate = "Very High (±5%)"
+                    elif error_percent <= 10:
+                        accuracy_estimate = "High (±10%)"
+                    elif error_percent <= 15:
+                        accuracy_estimate = "Moderate (±15%)"
+                    elif error_percent <= 25:
+                        accuracy_estimate = "Fair (±25%)"
+                    else:
+                        accuracy_estimate = "Low (>25%)"
+            
+            # Display prediction with accuracy information
+            st.markdown(f"""
+            <div style="background-color: {colors['accent']['ivory']}; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px; border: 1px solid {colors['primary']['bordeaux']}">
+                <h2 style="color: {colors['primary']['bordeaux']};">Predicted Diamond Price</h2>
+                <h1 style="color: {colors['primary']['bordeaux']}; font-size: 3rem;">${predicted_price:.2f}</h1>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Display accuracy information
+            st.markdown(f"<div class='accuracy-card'>", unsafe_allow_html=True)
+            st.write("### Prediction Accuracy Information")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Model R² Score", f"{model_info['test_r2']:.4f}")
+                st.metric("Model RMSE", f"${model_info['test_rmse']:.2f}")
+                
+                if model_info['cv_scores'] is not None:
+                    st.metric("Cross-Validation R²", f"{model_info['cv_scores'].mean():.4f} ± {model_info['cv_scores'].std():.4f}")
+            
+            with col2:
+                # Display confidence based on model performance and similar diamonds
+                if accuracy_estimate:
+                    st.metric("Estimated Accuracy", accuracy_estimate)
+                    
+                    # Calculate 95% confidence interval based on similar diamonds
+                    mean_price = similar_diamonds['price'].mean()
+                    std_price = similar_diamonds['price'].std()
+                    n = len(similar_diamonds)
+                    
+                    # Use t-distribution for small samples
+                    confidence = 0.95
+                    degrees_freedom = n - 1
+                    t_value = stats.t.ppf((1 + confidence) / 2, degrees_freedom)
+                    
+                    margin_error = t_value * (std_price / np.sqrt(n))
+                    lower_bound = max(0, mean_price - margin_error)
+                    upper_bound = mean_price + margin_error
+                    
+                    st.metric("Price Range (95% CI)", f"${lower_bound:.2f} - ${upper_bound:.2f}")
+                    st.metric("Similar Diamonds Found", f"{n}")
+                else:
+                    st.write("Insufficient similar diamonds found to estimate accuracy.")
+                    st.metric("Model Confidence", "Based on test R² score")
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+            
             # If multiple models are trained, show comparison
             if len(st.session_state.models) > 1:
-                st.markdown(f"""
-                <div style="background-color: #f0f8ff; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
-                    <h2 style="color: #3366ff;">Predicted Diamond Price ({selected_model})</h2>
-                    <h1 style="color: #3366ff; font-size: 3rem;">${predicted_price:.2f}</h1>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Compare with other models
                 st.write("### Price Predictions from All Models")
                 
                 comparison_data = []
@@ -908,41 +1097,27 @@ elif page == "Price Prediction":
                 model_names = [data["Model"] for data in comparison_data]
                 predictions = [float(data["Predicted Price"].replace("$", "")) for data in comparison_data]
                 
-                bars = ax.bar(model_names, predictions, color='#3175D9')
+                bars = ax.bar(model_names, predictions, color=colors['primary']['plum'], alpha=0.8)
                 
                 # Highlight selected model
                 selected_index = model_names.index(selected_model)
-                bars[selected_index].set_color('#22c55e')
+                bars[selected_index].set_color(colors['accent']['gold'])
                 
-                plt.title('Price Predictions by Different Models')
-                plt.ylabel('Predicted Price ($)')
+                plt.title('Price Predictions by Different Models', fontsize=14, color=colors['primary']['bordeaux'])
+                plt.ylabel('Predicted Price ($)', fontsize=12, color=colors['primary']['charcoal'])
                 plt.xticks(rotation=45, ha='right')
                 plt.grid(axis='y', linestyle='--', alpha=0.7)
                 
                 # Add price labels on top of bars
                 for i, v in enumerate(predictions):
-                    ax.text(i, v + 100, f"${v:.2f}", ha='center', fontweight='bold')
+                    ax.text(i, v + 100, f"${v:.2f}", ha='center', fontweight='bold', color=colors['primary']['charcoal'])
                 
                 plt.tight_layout()
                 st.pyplot(fig)
-            else:
-                st.markdown(f"""
-                <div style="background-color: #f0f8ff; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
-                    <h2 style="color: #3366ff;">Predicted Diamond Price</h2>
-                    <h1 style="color: #3366ff; font-size: 3rem;">${predicted_price:.2f}</h1>
-                </div>
-                """, unsafe_allow_html=True)
             
             # Show comparable diamonds
-            st.write("### Similar Diamonds in Dataset")
-            
-            # Find similar diamonds based on carat weight
-            if "carat" in df.columns:
-                similar_diamonds = df[(df['carat'] >= carat*0.9) & (df['carat'] <= carat*1.1)]
-                
-                if not similar_diamonds.empty:
-                    st.dataframe(similar_diamonds.head(5))
-                else:
-                    st.write("No similar diamonds found in the dataset.")
+            if similar_diamonds is not None and not similar_diamonds.empty:
+                st.write("### Similar Diamonds in Dataset")
+                st.dataframe(similar_diamonds.head(5))
             else:
-                st.write("Cannot find similar diamonds: carat column not available.")
+                st.write("No similar diamonds found in the dataset.")
