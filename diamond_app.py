@@ -6,9 +6,13 @@ import seaborn as sns
 import io
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from sklearn.preprocessing import StandardScaler
 
 # Set page configuration
 st.set_page_config(
@@ -35,6 +39,17 @@ st.markdown("""
         padding: 10px;
         margin: 10px 0;
     }
+    .algorithm-card {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        border-left: 4px solid #3366ff;
+    }
+    .selected-algorithm {
+        border-left: 4px solid #22c55e;
+        background-color: #f0f9ff;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -49,8 +64,8 @@ page = st.sidebar.radio("Go to", ["Data Overview", "Exploratory Analysis", "Pric
                                   "Feature Correlation", "Error Analysis", "Price Prediction"])
 
 # Initialize session state if not already done
-if 'model' not in st.session_state:
-    st.session_state.model = None
+if 'models' not in st.session_state:
+    st.session_state.models = {}
 if 'X_train' not in st.session_state:
     st.session_state.X_train = None
 if 'X_test' not in st.session_state:
@@ -61,6 +76,10 @@ if 'y_test' not in st.session_state:
     st.session_state.y_test = None
 if 'features' not in st.session_state:
     st.session_state.features = None
+if 'current_model' not in st.session_state:
+    st.session_state.current_model = None
+if 'scaler' not in st.session_state:
+    st.session_state.scaler = None
 
 # Load data
 @st.cache_data
@@ -180,7 +199,7 @@ elif page == "Distribution Analysis":
 
 # Model Building
 elif page == "Model Building":
-    st.markdown("<h2 class='sub-header'>Linear Regression Model Building</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 class='sub-header'>Advanced Model Building</h2>", unsafe_allow_html=True)
     
     # Create a copy of the dataframe for encoding
     df_encoded = df.copy()
@@ -206,18 +225,29 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
         
         st.dataframe(df_encoded.head())
     
-    # Model selection
-    model_type = st.radio("Select Model Type", ["Full Model (All Features)", "Reduced Model (Without x, y, z)"])
+    # Data preprocessing options
+    st.write("### Data Preprocessing Options")
     
-    if model_type == "Full Model (All Features)":
-        features = list(df_encoded.columns)
-        features.remove('price')
-    else:
-        # Drop features highly correlated with 'carat'
-        df_encoded_reduced = df_encoded.drop(columns=['x', 'y', 'z'])
-        features = list(df_encoded_reduced.columns)
-        features.remove('price')
-        df_encoded = df_encoded_reduced
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        model_type = st.radio("Feature Selection", ["Full Model (All Features)", "Reduced Model (Without x, y, z)"])
+        
+        if model_type == "Full Model (All Features)":
+            features = list(df_encoded.columns)
+            features.remove('price')
+        else:
+            # Drop features highly correlated with 'carat'
+            df_encoded_reduced = df_encoded.drop(columns=['x', 'y', 'z'])
+            features = list(df_encoded_reduced.columns)
+            features.remove('price')
+            df_encoded = df_encoded_reduced
+    
+    with col2:
+        scale_features = st.checkbox("Scale Features (Recommended for SVM and some algorithms)", value=True)
+        use_cross_validation = st.checkbox("Use Cross-Validation", value=True)
+        if use_cross_validation:
+            cv_folds = st.slider("Number of CV Folds", 3, 10, 5)
     
     # Split data
     X = df_encoded[features]
@@ -228,62 +258,274 @@ df["clarity"].replace({"I1": 1, "SI2": 2, "SI1": 3, "VS2": 4, "VS1": 5, "VVS2": 
     
     X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=random_state)
     
-    st.write(f"### Training set: {X_train.shape[0]} samples")
-    st.write(f"### Test set: {X_test.shape[0]} samples")
+    # Scale features if selected
+    if scale_features:
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        # Store scaler for later use
+        st.session_state.scaler = scaler
+    else:
+        X_train_scaled = X_train
+        X_test_scaled = X_test
+        st.session_state.scaler = None
     
-    # Build model
-    if st.button("Train Model"):
-        with st.spinner("Training model..."):
-            linear_regression = LinearRegression()
-            linear_regression.fit(X_train, y_train)
+    # Store data in session state
+    st.session_state.X_train = X_train
+    st.session_state.X_test = X_test
+    st.session_state.y_train = y_train
+    st.session_state.y_test = y_test
+    st.session_state.features = features
+    
+    st.write(f"### Training set: {X_train.shape[0]} samples | Test set: {X_test.shape[0]} samples")
+    
+    # Algorithm selection
+    st.write("### Select Algorithms to Train")
+    
+    # Define available algorithms with their parameters
+    algorithms = {
+        "Linear Regression": {
+            "model": LinearRegression(),
+            "params": {}
+        },
+        "Ridge Regression": {
+            "model": Ridge(),
+            "params": {
+                "alpha": st.slider("Ridge alpha", 0.01, 10.0, 1.0, 0.01, key="ridge_alpha")
+            }
+        },
+        "Lasso Regression": {
+            "model": Lasso(),
+            "params": {
+                "alpha": st.slider("Lasso alpha", 0.001, 1.0, 0.01, 0.001, key="lasso_alpha")
+            }
+        },
+        "Decision Tree": {
+            "model": DecisionTreeRegressor(),
+            "params": {
+                "max_depth": st.slider("Max depth", 2, 30, 10, key="dt_depth"),
+                "min_samples_split": st.slider("Min samples split", 2, 20, 2, key="dt_split"),
+                "min_samples_leaf": st.slider("Min samples leaf", 1, 20, 1, key="dt_leaf")
+            }
+        },
+        "Random Forest": {
+            "model": RandomForestRegressor(),
+            "params": {
+                "n_estimators": st.slider("Number of trees", 10, 200, 100, 10, key="rf_trees"),
+                "max_depth": st.slider("Max depth", 2, 30, 10, key="rf_depth"),
+                "min_samples_split": st.slider("Min samples split", 2, 20, 2, key="rf_split")
+            }
+        },
+        "Gradient Boosting": {
+            "model": GradientBoostingRegressor(),
+            "params": {
+                "n_estimators": st.slider("Number of estimators", 10, 200, 100, 10, key="gb_trees"),
+                "learning_rate": st.slider("Learning rate", 0.01, 0.3, 0.1, 0.01, key="gb_lr"),
+                "max_depth": st.slider("Max depth", 2, 10, 3, key="gb_depth")
+            }
+        },
+        "Support Vector Machine": {
+            "model": SVR(),
+            "params": {
+                "C": st.slider("C (Regularization)", 0.1, 10.0, 1.0, 0.1, key="svm_c"),
+                "kernel": st.selectbox("Kernel", ["linear", "poly", "rbf", "sigmoid"], key="svm_kernel"),
+                "gamma": st.selectbox("Gamma", ["scale", "auto"], key="svm_gamma")
+            }
+        }
+    }
+    
+    # Let user select which algorithms to train
+    selected_algorithms = []
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.checkbox("Linear Regression", value=True):
+            selected_algorithms.append("Linear Regression")
+        if st.checkbox("Ridge Regression"):
+            selected_algorithms.append("Ridge Regression")
+        if st.checkbox("Lasso Regression"):
+            selected_algorithms.append("Lasso Regression")
+        if st.checkbox("Decision Tree"):
+            selected_algorithms.append("Decision Tree")
+    
+    with col2:
+        if st.checkbox("Random Forest"):
+            selected_algorithms.append("Random Forest")
+        if st.checkbox("Gradient Boosting"):
+            selected_algorithms.append("Gradient Boosting")
+        if st.checkbox("Support Vector Machine"):
+            selected_algorithms.append("Support Vector Machine")
+    
+    # Train models
+    if st.button("Train Selected Models"):
+        if not selected_algorithms:
+            st.error("Please select at least one algorithm to train.")
+        else:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            # Store model in session state for later use
-            st.session_state.model = linear_regression
-            st.session_state.X_train = X_train
-            st.session_state.X_test = X_test
-            st.session_state.y_train = y_train
-            st.session_state.y_test = y_test
-            st.session_state.features = features
+            # Clear previous models if any
+            st.session_state.models = {}
             
-            # Display coefficients
-            st.write("### Model Coefficients")
+            for i, algo_name in enumerate(selected_algorithms):
+                status_text.text(f"Training {algo_name}...")
+                
+                # Get algorithm and parameters
+                algo_info = algorithms[algo_name]
+                model = algo_info["model"]
+                params = algo_info["params"]
+                
+                # Set parameters
+                model.set_params(**params)
+                
+                # Train model
+                model.fit(X_train_scaled, y_train)
+                
+                # Make predictions
+                y_train_pred = model.predict(X_train_scaled)
+                y_test_pred = model.predict(X_test_scaled)
+                
+                # Calculate metrics
+                train_r2 = r2_score(y_train, y_train_pred)
+                test_r2 = r2_score(y_test, y_test_pred)
+                train_rmse = np.sqrt(mean_squared_error(y_train, y_train_pred))
+                test_rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
+                
+                # Cross-validation if selected
+                cv_scores = None
+                if use_cross_validation:
+                    cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=cv_folds, scoring='r2')
+                
+                # Store model and metrics
+                st.session_state.models[algo_name] = {
+                    "model": model,
+                    "params": params,
+                    "train_r2": train_r2,
+                    "test_r2": test_r2,
+                    "train_rmse": train_rmse,
+                    "test_rmse": test_rmse,
+                    "cv_scores": cv_scores
+                }
+                
+                # Update progress
+                progress_bar.progress((i + 1) / len(selected_algorithms))
             
-            coef_df = pd.DataFrame({
-                'Feature': ['Constant'] + features,
-                'Coefficient': [linear_regression.intercept_] + list(linear_regression.coef_)
-            })
+            status_text.text("All models trained successfully!")
+            st.session_state.current_model = selected_algorithms[0]
             
-            st.dataframe(coef_df)
+            # Show success message
+            st.success(f"Successfully trained {len(selected_algorithms)} models!")
+    
+    # Display trained models if any
+    if st.session_state.models:
+        st.write("### Trained Models Performance")
+        
+        # Create a dataframe to compare models
+        model_comparison = []
+        
+        for algo_name, model_info in st.session_state.models.items():
+            model_data = {
+                "Algorithm": algo_name,
+                "Train R²": f"{model_info['train_r2']:.4f}",
+                "Test R²": f"{model_info['test_r2']:.4f}",
+                "Train RMSE": f"${model_info['train_rmse']:.2f}",
+                "Test RMSE": f"${model_info['test_rmse']:.2f}"
+            }
             
-            st.success("Model trained successfully!")
+            if model_info['cv_scores'] is not None:
+                model_data["CV R² (mean)"] = f"{model_info['cv_scores'].mean():.4f}"
+                model_data["CV R² (std)"] = f"{model_info['cv_scores'].std():.4f}"
+            
+            model_comparison.append(model_data)
+        
+        # Display comparison table
+        st.dataframe(pd.DataFrame(model_comparison).set_index("Algorithm"))
+        
+        # Plot model comparison
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        model_names = list(st.session_state.models.keys())
+        train_scores = [st.session_state.models[name]["train_r2"] for name in model_names]
+        test_scores = [st.session_state.models[name]["test_r2"] for name in model_names]
+        
+        x = np.arange(len(model_names))
+        width = 0.35
+        
+        ax.bar(x - width/2, train_scores, width, label='Train R²', color='#4CAF50')
+        ax.bar(x + width/2, test_scores, width, label='Test R²', color='#2196F3')
+        
+        ax.set_ylabel('R² Score')
+        ax.set_title('Model Performance Comparison')
+        ax.set_xticks(x)
+        ax.set_xticklabels(model_names, rotation=45, ha='right')
+        ax.legend()
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # Feature importance for tree-based models
+        tree_models = ["Decision Tree", "Random Forest", "Gradient Boosting"]
+        available_tree_models = [m for m in tree_models if m in st.session_state.models]
+        
+        if available_tree_models:
+            st.write("### Feature Importance")
+            
+            selected_model = st.selectbox("Select model for feature importance", available_tree_models)
+            
+            if selected_model in st.session_state.models:
+                model_info = st.session_state.models[selected_model]
+                model = model_info["model"]
+                
+                # Get feature importance
+                importances = model.feature_importances_
+                indices = np.argsort(importances)[::-1]
+                
+                # Plot feature importance
+                fig, ax = plt.subplots(figsize=(10, 6))
+                plt.bar(range(X_train.shape[1]), importances[indices], align='center')
+                plt.xticks(range(X_train.shape[1]), [X_train.columns[i] for i in indices], rotation=90)
+                plt.title(f'Feature Importance - {selected_model}')
+                plt.tight_layout()
+                st.pyplot(fig)
 
 # Model Evaluation
 elif page == "Model Evaluation":
     st.markdown("<h2 class='sub-header'>Model Evaluation</h2>", unsafe_allow_html=True)
     
-    if st.session_state.model is None:
-        st.warning("Please train a model first in the 'Model Building' section.")
+    if not st.session_state.models:
+        st.warning("Please train at least one model first in the 'Model Building' section.")
     else:
-        model = st.session_state.model
+        # Let user select which model to evaluate
+        model_names = list(st.session_state.models.keys())
+        selected_model = st.selectbox("Select Model to Evaluate", model_names, 
+                                     index=model_names.index(st.session_state.current_model) if st.session_state.current_model in model_names else 0)
+        
+        # Update current model
+        st.session_state.current_model = selected_model
+        
+        # Get model info
+        model_info = st.session_state.models[selected_model]
+        model = model_info["model"]
+        
+        # Get data
         X_train = st.session_state.X_train
         X_test = st.session_state.X_test
         y_train = st.session_state.y_train
         y_test = st.session_state.y_test
         
+        # Apply scaling if needed
+        if st.session_state.scaler is not None:
+            X_train_eval = st.session_state.scaler.transform(X_train)
+            X_test_eval = st.session_state.scaler.transform(X_test)
+        else:
+            X_train_eval = X_train
+            X_test_eval = X_test
+        
         # Make predictions
-        y_train_pred = model.predict(X_train)
-        y_test_pred = model.predict(X_test)
-        
-        # Calculate metrics
-        train_r2 = r2_score(y_train, y_train_pred)
-        train_mse = mean_squared_error(y_train, y_train_pred)
-        train_rmse = np.sqrt(train_mse)
-        train_mae = mean_absolute_error(y_train, y_train_pred)
-        
-        test_r2 = r2_score(y_test, y_test_pred)
-        test_mse = mean_squared_error(y_test, y_test_pred)
-        test_rmse = np.sqrt(test_mse)
-        test_mae = mean_absolute_error(y_test, y_test_pred)
+        y_train_pred = model.predict(X_train_eval)
+        y_test_pred = model.predict(X_test_eval)
         
         # Display metrics
         col1, col2 = st.columns(2)
@@ -291,20 +533,39 @@ elif page == "Model Evaluation":
         with col1:
             st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
             st.write("### Training Set Metrics")
-            st.metric("R-squared", f"{train_r2:.3f}")
-            st.metric("Mean Squared Error", f"{train_mse:.3f}")
-            st.metric("Root Mean Squared Error", f"{train_rmse:.3f}")
-            st.metric("Mean Absolute Error", f"{train_mae:.3f}")
+            st.metric("R-squared", f"{model_info['train_r2']:.3f}")
+            st.metric("Root Mean Squared Error", f"{model_info['train_rmse']:.3f}")
+            st.metric("Mean Absolute Error", f"{mean_absolute_error(y_train, y_train_pred):.3f}")
             st.markdown("</div>", unsafe_allow_html=True)
         
         with col2:
             st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
             st.write("### Test Set Metrics")
-            st.metric("R-squared", f"{test_r2:.3f}")
-            st.metric("Mean Squared Error", f"{test_mse:.3f}")
-            st.metric("Root Mean Squared Error", f"{test_rmse:.3f}")
-            st.metric("Mean Absolute Error", f"{test_mae:.3f}")
+            st.metric("R-squared", f"{model_info['test_r2']:.3f}")
+            st.metric("Root Mean Squared Error", f"{model_info['test_rmse']:.3f}")
+            st.metric("Mean Absolute Error", f"{mean_absolute_error(y_test, y_test_pred):.3f}")
             st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Cross-validation results if available
+        if model_info['cv_scores'] is not None:
+            st.write("### Cross-Validation Results")
+            cv_scores = model_info['cv_scores']
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Mean R²", f"{cv_scores.mean():.3f}")
+            col2.metric("Std Dev", f"{cv_scores.std():.3f}")
+            col3.metric("Min/Max", f"{cv_scores.min():.3f} / {cv_scores.max():.3f}")
+            
+            # Plot CV scores
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(range(1, len(cv_scores) + 1), cv_scores, 'o-', label='R² score')
+            ax.axhline(y=cv_scores.mean(), color='r', linestyle='--', label=f'Mean: {cv_scores.mean():.3f}')
+            ax.set_xlabel('Fold')
+            ax.set_ylabel('R² Score')
+            ax.set_title('Cross-Validation Scores')
+            ax.legend()
+            ax.grid(True, linestyle='--', alpha=0.7)
+            st.pyplot(fig)
         
         # Actual vs Predicted Plot
         st.write("### Actual vs Predicted Prices")
@@ -324,6 +585,32 @@ elif page == "Model Evaluation":
         plt.xlabel('Actual Price')
         plt.ylabel('Predicted Price')
         plt.title(f'Actual vs Predicted Prices ({dataset})')
+        st.pyplot(fig)
+        
+        # Residual plot
+        st.write("### Residual Analysis")
+        
+        residuals = actual - predicted
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Residual scatter plot
+        ax1.scatter(predicted, residuals, alpha=0.5)
+        ax1.axhline(y=0, color='r', linestyle='--')
+        ax1.set_xlabel('Predicted Price')
+        ax1.set_ylabel('Residuals')
+        ax1.set_title('Residuals vs Predicted')
+        ax1.grid(True, linestyle='--', alpha=0.7)
+        
+        # Residual histogram
+        ax2.hist(residuals, bins=30, alpha=0.7, color='skyblue')
+        ax2.axvline(x=0, color='r', linestyle='--')
+        ax2.set_xlabel('Residual Value')
+        ax2.set_ylabel('Frequency')
+        ax2.set_title('Residual Distribution')
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        
+        plt.tight_layout()
         st.pyplot(fig)
 
 # Feature Correlation
@@ -347,7 +634,7 @@ elif page == "Feature Correlation":
     st.pyplot(fig)
     
     # VIF calculation
-    if st.session_state.model is not None:
+    if st.session_state.X_train is not None:
         st.write("### Variance Inflation Factor (VIF)")
         
         X_train = st.session_state.X_train
@@ -377,18 +664,38 @@ elif page == "Feature Correlation":
 elif page == "Error Analysis":
     st.markdown("<h2 class='sub-header'>Error Analysis</h2>", unsafe_allow_html=True)
     
-    if st.session_state.model is None:
-        st.warning("Please train a model first in the 'Model Building' section.")
+    if not st.session_state.models:
+        st.warning("Please train at least one model first in the 'Model Building' section.")
     else:
-        model = st.session_state.model
+        # Let user select which model to analyze
+        model_names = list(st.session_state.models.keys())
+        selected_model = st.selectbox("Select Model to Analyze", model_names, 
+                                     index=model_names.index(st.session_state.current_model) if st.session_state.current_model in model_names else 0)
+        
+        # Update current model
+        st.session_state.current_model = selected_model
+        
+        # Get model info
+        model_info = st.session_state.models[selected_model]
+        model = model_info["model"]
+        
+        # Get data
         X_train = st.session_state.X_train
         X_test = st.session_state.X_test
         y_train = st.session_state.y_train
         y_test = st.session_state.y_test
         
+        # Apply scaling if needed
+        if st.session_state.scaler is not None:
+            X_train_eval = st.session_state.scaler.transform(X_train)
+            X_test_eval = st.session_state.scaler.transform(X_test)
+        else:
+            X_train_eval = X_train
+            X_test_eval = X_test
+        
         # Make predictions
-        y_train_pred = model.predict(X_train)
-        y_test_pred = model.predict(X_test)
+        y_train_pred = model.predict(X_train_eval)
+        y_test_pred = model.predict(X_test_eval)
         
         # Calculate errors
         train_errors = y_train - y_train_pred
@@ -400,9 +707,11 @@ elif page == "Error Analysis":
         if dataset == "Training Set":
             errors = train_errors
             y_actual = y_train
+            predictions = y_train_pred
         else:
             errors = test_errors
             y_actual = y_test
+            predictions = y_test_pred
         
         st.write(f"### Error Distribution ({dataset})")
         
@@ -431,16 +740,67 @@ elif page == "Error Analysis":
         col2.metric("Median Error", f"{np.median(errors):.2f}")
         col3.metric("Std Dev", f"{errors.std():.2f}")
         col4.metric("Max Abs Error", f"{np.abs(errors).max():.2f}")
+        
+        # Error by price range
+        st.write("### Error Analysis by Price Range")
+        
+        # Create price bins
+        price_bins = [0, 1000, 2000, 5000, 10000, 20000]
+        price_labels = ['0-1K', '1K-2K', '2K-5K', '5K-10K', '10K+']
+        
+        # Assign bins
+        y_binned = pd.cut(y_actual, bins=price_bins, labels=price_labels, right=False)
+        
+        # Calculate mean absolute error by bin
+        error_by_bin = pd.DataFrame({
+            'Actual': y_actual,
+            'Predicted': predictions,
+            'Error': errors,
+            'Abs_Error': np.abs(errors),
+            'Price_Bin': y_binned
+        })
+        
+        bin_stats = error_by_bin.groupby('Price_Bin').agg({
+            'Abs_Error': ['mean', 'median', 'std', 'count'],
+            'Error': ['mean']
+        })
+        
+        bin_stats.columns = ['MAE', 'Median AE', 'Std Dev', 'Count', 'Mean Error']
+        
+        st.dataframe(bin_stats)
+        
+        # Plot MAE by price bin
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bin_stats['MAE'].plot(kind='bar', ax=ax, color='#3175D9')
+        plt.title('Mean Absolute Error by Price Range')
+        plt.ylabel('Mean Absolute Error ($)')
+        plt.xlabel('Price Range')
+        plt.xticks(rotation=45)
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        st.pyplot(fig)
 
 # Price Prediction
 elif page == "Price Prediction":
     st.markdown("<h2 class='sub-header'>Diamond Price Prediction</h2>", unsafe_allow_html=True)
     
-    if st.session_state.model is None:
-        st.warning("Please train a model first in the 'Model Building' section.")
+    if not st.session_state.models:
+        st.warning("Please train at least one model first in the 'Model Building' section.")
     else:
-        model = st.session_state.model
+        # Let user select which model to use for prediction
+        model_names = list(st.session_state.models.keys())
+        selected_model = st.selectbox("Select Model for Prediction", model_names, 
+                                     index=model_names.index(st.session_state.current_model) if st.session_state.current_model in model_names else 0)
+        
+        # Update current model
+        st.session_state.current_model = selected_model
+        
+        # Get model info
+        model_info = st.session_state.models[selected_model]
+        model = model_info["model"]
         features = st.session_state.features
+        
+        st.write(f"### Using {selected_model} for Prediction")
+        st.write(f"Test R² Score: {model_info['test_r2']:.4f} | Test RMSE: ${model_info['test_rmse']:.2f}")
         
         st.write("### Enter Diamond Characteristics")
         
@@ -498,15 +858,80 @@ elif page == "Price Prediction":
                 st.error(f"Missing feature: {feature}. Please check your input data.")
         
         if st.button("Predict Price"):
-            # Make prediction
-            predicted_price = model.predict(input_df)[0]
+            # Apply scaling if needed
+            if st.session_state.scaler is not None:
+                input_scaled = st.session_state.scaler.transform(input_df)
+            else:
+                input_scaled = input_df
             
-            st.markdown(f"""
-            <div style="background-color: #f0f8ff; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
-                <h2 style="color: #3366ff;">Predicted Diamond Price</h2>
-                <h1 style="color: #3366ff; font-size: 3rem;">${predicted_price:.2f}</h1>
-            </div>
-            """, unsafe_allow_html=True)
+            # Make prediction with selected model
+            predicted_price = model.predict(input_scaled)[0]
+            
+            # If multiple models are trained, show comparison
+            if len(st.session_state.models) > 1:
+                st.markdown(f"""
+                <div style="background-color: #f0f8ff; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
+                    <h2 style="color: #3366ff;">Predicted Diamond Price ({selected_model})</h2>
+                    <h1 style="color: #3366ff; font-size: 3rem;">${predicted_price:.2f}</h1>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Compare with other models
+                st.write("### Price Predictions from All Models")
+                
+                comparison_data = []
+                
+                for name, info in st.session_state.models.items():
+                    model_obj = info["model"]
+                    
+                    # Apply scaling if needed
+                    if st.session_state.scaler is not None:
+                        input_scaled = st.session_state.scaler.transform(input_df)
+                    else:
+                        input_scaled = input_df
+                    
+                    # Make prediction
+                    pred = model_obj.predict(input_scaled)[0]
+                    
+                    comparison_data.append({
+                        "Model": name,
+                        "Predicted Price": f"${pred:.2f}",
+                        "Test R²": f"{info['test_r2']:.4f}",
+                        "Test RMSE": f"${info['test_rmse']:.2f}"
+                    })
+                
+                st.dataframe(pd.DataFrame(comparison_data).set_index("Model"))
+                
+                # Plot comparison
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                model_names = [data["Model"] for data in comparison_data]
+                predictions = [float(data["Predicted Price"].replace("$", "")) for data in comparison_data]
+                
+                bars = ax.bar(model_names, predictions, color='#3175D9')
+                
+                # Highlight selected model
+                selected_index = model_names.index(selected_model)
+                bars[selected_index].set_color('#22c55e')
+                
+                plt.title('Price Predictions by Different Models')
+                plt.ylabel('Predicted Price ($)')
+                plt.xticks(rotation=45, ha='right')
+                plt.grid(axis='y', linestyle='--', alpha=0.7)
+                
+                # Add price labels on top of bars
+                for i, v in enumerate(predictions):
+                    ax.text(i, v + 100, f"${v:.2f}", ha='center', fontweight='bold')
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+            else:
+                st.markdown(f"""
+                <div style="background-color: #f0f8ff; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
+                    <h2 style="color: #3366ff;">Predicted Diamond Price</h2>
+                    <h1 style="color: #3366ff; font-size: 3rem;">${predicted_price:.2f}</h1>
+                </div>
+                """, unsafe_allow_html=True)
             
             # Show comparable diamonds
             st.write("### Similar Diamonds in Dataset")
