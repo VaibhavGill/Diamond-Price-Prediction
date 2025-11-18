@@ -165,12 +165,12 @@ if 'scaler' not in st.session_state:
 # Load data
 @st.cache_data
 @st.cache_data
+@st.cache_data
 def load_data():
-    df = pd.read_csv('https://s3-student-datasets-bucket.whjr.online/whitehat-ds-datasets/diamonds.csv')
-    if 'Unnamed: 0' in df.columns:
-        df.drop(columns='Unnamed: 0', inplace=True)
-    df = pd.read_csv("diamonds.csv")
+    url = "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/diamonds.csv"
+    df = pd.read_csv(url)
     return df
+
 
 
 df = load_data()
